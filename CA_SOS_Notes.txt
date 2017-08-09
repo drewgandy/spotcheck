@@ -1,0 +1,4 @@
+California SOS UCC Search Notes
+* if name is listed as 'ABC, LLC a California limited liability company', standard search logic removes 'California' in addition to 'LLC' and 'a limited liability company'
+* '&' is replaced with 'AND'
+* 'DBA' etc. in a name *does* result in the debtor not showing up.  See 'CHICK PEA, LLC'.  There are 8 results under wildcard search (3 of which have 'DBA' etc. in name) but only 5 show up in standard search logic
