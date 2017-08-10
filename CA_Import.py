@@ -1,7 +1,11 @@
+import re
+from unidecode import unidecode
+import MySQLdb as mdb
+import logging
+
 def Import_UCC_Data():
-    import MySQLdb as mdb
  #   import _mysql
-    import CA_Denoise_Name
+ #   import CA_Denoise_Name
     import glob
 
     con = mdb.connect(host=cfg.mysql['host'], port=cfg.mysql['port'], user=cfg.mysql['user'], passwd=cfg.mysql['passwd'], db=cfg.mysql['db'], autocommit=True)
@@ -55,7 +59,7 @@ def Import_UCC_Data():
                 # De-Noisify Debtor's Name (remove punctuation marks, business abbreviations, etc.)
                 #BusinessDebtorCount=BusinessDebtorCount+1
                 #print "Business Debtor " + str(BusinessDebtorCount)
-                cur.execute("INSERT INTO BusinessDebtors(InitialFilingNumber, Name, NonNoisyName, StreetAddress, City, State, ZipCode, ZipCodeExtension, CountryCode) VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s)", (t[1:14].strip(),t[27:327].strip(), CA_Denoise_Name.DeNoiseName((t[27:327]).strip()), t[327:437].strip(),t[437:501].strip(),t[501:533].strip(),t[533:548].strip(),t[548:554].strip(),t[554:557].strip()))              
+                cur.execute("INSERT INTO BusinessDebtors(InitialFilingNumber, Name, NonNoisyName, StreetAddress, City, State, ZipCode, ZipCodeExtension, CountryCode) VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s)", (t[1:14].strip(),t[27:327].strip(), DeNoiseName((t[27:327]).strip()), t[327:437].strip(),t[437:501].strip(),t[501:533].strip(),t[533:548].strip(),t[548:554].strip(),t[554:557].strip()))              
                 con.commit()
     
 #            if RecordCode == "3": #Personal Debtor - will skip
@@ -84,11 +88,13 @@ def Import_UCC_Data():
 def Import_Corp_Data():
     import MySQLdb as mdb
 #    import _mysql
-    import CA_Denoise_Name
+#    import CA_Denoise_Name
     import time
     import glob
 #    import os
     import config as cfg
+
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
     con = mdb.connect(host=cfg.mysql['host'], port=cfg.mysql['port'], user=cfg.mysql['user'], passwd=cfg.mysql['passwd'], db=cfg.mysql['db'], autocommit=True)
 
@@ -99,28 +105,78 @@ def Import_Corp_Data():
     counter = 0
     
     path = cfg.Corp_path
-    for filename in glob.iglob(path + '*.txt'):
-        print(filename)
-        f = open(filename, 'r')
-        print("OPEN: " + str(time.clock()))
+    pct = 1
+    portion= 186646
+    for filename in glob.iglob(path + '*.TXT'):
+        logging.debug(filename)
+        f = open(filename, 'r', encoding='latin-1')
+        logging.debug("OPEN: " + str(time.clock()))
         counter = 0
         linecount = 0
         for line in f:
-            linecount=linecount+1
             t = line #.readline()
-            
             # this can limit the number of records looped through
             #counter = counter + 1
             #if counter == 5:
-                # break
+            #    break
 
             if filename.endswith('CORPMASTER.TXT'):
                 # De-Noisify Debtor's Name (remove punctuation marks, business abbreviations, etc.)
-                cur.execute("INSERT INTO SOSCompanyList(CompNum, FormationDate, Status, Type, Name, NonNoisyName) VALUES(%s, %s, %s, %s, %s, %s);", (t[5:13].strip(), t[13:21].strip(), t[21].strip(), t[22:26].strip(), t[70:420].strip(), CA_Denoise_Name.DeNoiseName(t[70:420])))
+                cur.execute("INSERT INTO SOSCompanyList(CompNum, FormationDate, Status, Type, Name, NonNoisyName) VALUES(%s, %s, %s, %s, %s, %s);", (t[5:13].strip(), t[13:21].strip(), t[21].strip(), t[22:26].strip(), t[70:420].strip(), DeNoiseName(t[70:420])))
                 con.commit()
+                linecount=linecount+1
+
             if filename.endswith('LPMASTER.TXT'):
                 # De-Noisify Debtor's Name (remove punctuation marks, business abbreviations, etc.)
-                cur.execute("INSERT INTO SOSCompanyList(CompNum, FormationDate, Status, Type, Name, NonNoisyName) VALUES(%s, %s, %s, %s, %s, %s);", (t[0:12].strip(), t[12:20].strip(), t[20].strip(), t[21].strip(), t[22:242].strip(), CA_Denoise_Name.DeNoiseName(t[22:242])))
+                cur.execute("INSERT INTO SOSCompanyList(CompNum, FormationDate, Status, Type, Name, NonNoisyName) VALUES(%s, %s, %s, %s, %s, %s);", (t[0:12].strip(), t[12:20].strip(), t[20].strip(), t[21].strip(), t[22:242].strip(), DeNoiseName(t[22:242])))
                 con.commit()
-
+                linecount=linecount+1
+            if linecount > (portion * pct):
+                    logging.debug(str(int((linecount/3732920)*100)) + "%")
+                    if pct == 1:
+                        pct = 5
+                    else:
+                        pct = pct + 5
         f.close()
+        logging.debug(linecount)
+
+
+    # De-Noisify Debtor's Name (remove punctuation marks, business abbreviations, etc.)
+def DeNoiseName(NoisyName):
+    # strip spaces from name and make uppercase
+    NoisyName = NoisyName.strip().upper()
+    
+    NoisyName = unidecode(NoisyName)
+
+    # remove punctuation and replace with space, but then strip spaces if at end of line (spaces at end of line were causing, e.g. "Inc." not to be found at end of line because period replaced with space
+    for ch in ['\"', "\'", '[', ']', '{', '}', '(', ')', ':', ',', '!', '<', '>', '?', ';', '\\', '//', '.','-','`','~']:
+        if ch in NoisyName:
+            NoisyName=NoisyName.replace(ch," ").strip()
+    
+    # Replace "&" with "AND" (NOTE: CONFIRMED THAT CA SOS DOES THIS IN SEARCH LOGIC)
+    NoisyName=NoisyName.replace('&', 'AND')
+    
+    # ignore "THE" at beginning of name
+    if NoisyName.startswith('THE '):
+        NoisyName = NoisyName[4:]
+    
+    # combine single letters together (e.g. "L L C" becomes "LLC") NOTE: I'M NOT POSITIVE CA SOS DOES THIS
+    NoisyName = re.sub(r"\b(\w) (?=\w\b)", r"\1", NoisyName)
+            
+    # remove words and abbreviations at the end of a name that indicate the existence or nature of an organization.  This loops until all relevant words are removed. NOTE: I'M NOT POSITIVE CA SOS REMOVES 'A CALIFORNIA...'
+    # NOTE: confirmed that CA SOS does also remove California from 'California LLC' etc.
+    restart = True
+    while restart == True:
+        restart = False #reset restart flag
+        for ch in ['A', 'A CALIFORNIA', 'AKA', 'AN', 'AND', 'ASSN', 'ASSOC', 'ASSOCIATES', 'ASSOCIATION', 'ASSOCS', 'AT', 'CO', 'COMPANIES', 'COMPANY', 'COMPANYS', 'COOP', 'COOPERATIVE', 'CORP', 'CORPORATION', 'DBA', 'DIV', 'DIVISION', 'FDBA', 'FKA', 'FOR','IN', 'INC', 'INCORPORATED', 'IS', 'LC', 'LIMIT', 'LIMITED', 'LIMITED LIABILITY', 'LTD LIABILITY', 'LLC', 'LLP', 'LMTD', 'LP', 'LTD', 'MD', 'MDPA', 'OF', 'ON', 'PA', 'PARTNER', 'PARTNERS', 'PARTNERSHIP', 'PC', 'PROFESSIONAL', 'PTNR', 'THE']:
+            if NoisyName.endswith(' '+ch):
+                NoisyName=NoisyName[:-len(' '+ch)].strip()
+                restart=True
+
+    # Remove spaces
+    NoisyName=NoisyName.replace(' ', '')
+
+    NoisyName=re.sub('[^0-9a-zA-Z]+', '',NoisyName)
+
+    return NoisyName
+
