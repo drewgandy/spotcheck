@@ -7,8 +7,11 @@ def Import_UCC_Data():
  #   import _mysql
  #   import CA_Denoise_Name
     import glob
+    import config as cfg
+    
+    logging.basicConfig(filename='UCC_import.log',format='%(asctime)s %(message)s', level=logging.DEBUG)
 
-    con = mdb.connect(host=cfg.mysql['host'], port=cfg.mysql['port'], user=cfg.mysql['user'], passwd=cfg.mysql['passwd'], db=cfg.mysql['db'], autocommit=True)
+    con = mdb.connect(host=cfg.mysql['host'], port=cfg.mysql['port'], user=cfg.mysql['user'], passwd=cfg.mysql['passwd'], db=cfg.mysql['db'])
     counter = 0
 
     cur = con.cursor()
@@ -21,9 +24,13 @@ def Import_UCC_Data():
     cur.execute("CREATE TABLE SecuredParties(Id INT PRIMARY KEY AUTO_INCREMENT, InitialFilingNumber VARCHAR(14), Name VARCHAR(300), StreetAddress VARCHAR(110), City VARCHAR(64), State VARCHAR(32), ZipCode VARCHAR(15), ZipCodeExtension VARCHAR(6), CountryCode VARCHAR(3))")
  
     path = cfg.UCC_path
+    commit_count=0
+    commit_count_target=cfg.commit_count_factor
+    pct = 1
+    portion= 228051
     for filename in glob.iglob(path + '*.txt'):
-        print("OPENING: "+filename)
-        #print(filename)
+        logging.info("OPENING: "+filename)
+        #logging.debug(filename)
         f = open(filename, 'r', encoding='latin-1')
         skippedlines = 0
         initialFilings = 0
@@ -31,7 +38,7 @@ def Import_UCC_Data():
         linecount = 0
         counter = 0
         for line in f:
-            #print(line)
+            #logging.debug(line)
             t = line #.readline()
 
             # this can limit the number of records looped through
@@ -39,7 +46,7 @@ def Import_UCC_Data():
             #if counter == 2:
                 #con.commit()
                 #con.close()
-            #    print("BREAK EARLY##")
+            #    logging.debug("BREAK EARLY##")
             #    break
             
             RecordCode = t[0:1]
@@ -47,31 +54,27 @@ def Import_UCC_Data():
             if RecordCode == "1": #Initial Filing Record
                 #print "#################################################"
                 #initialFilings=initialFilings+1
-                #print("Filing Type: Initial Filing " + str(initialFilings))
-                try:
-                    cur.execute("INSERT INTO InitialFilingRecord(InitialFilingNumber, InitialFilingType, FilingDate, FilingTime, FilingStatus, LapseDate, PageCount) VALUES(%s, %s, %s, %s, %s, %s, %s)", (t[1:14].strip(),t[27:32].strip(),t[32:40].strip(),t[40:44].strip(),t[44:45].strip(),t[45:53].strip(),t[53:57].strip()))
-                    con.commit()
-                except (mdb.Error, mdb.Warning) as e:
-                    print(e)
-                    return None
+                #logging.debug("Filing Type: Initial Filing " + str(initialFilings))
+                cur.execute("INSERT INTO InitialFilingRecord(InitialFilingNumber, InitialFilingType, FilingDate, FilingTime, FilingStatus, LapseDate, PageCount) VALUES(%s, %s, %s, %s, %s, %s, %s)", (t[1:14].strip(),t[27:32].strip(),t[32:40].strip(),t[40:44].strip(),t[44:45].strip(),t[45:53].strip(),t[53:57].strip()))
+                commit_count=commit_count+1
 
             if RecordCode == "2": #Business Debtor
                 # De-Noisify Debtor's Name (remove punctuation marks, business abbreviations, etc.)
                 #BusinessDebtorCount=BusinessDebtorCount+1
                 #print "Business Debtor " + str(BusinessDebtorCount)
                 cur.execute("INSERT INTO BusinessDebtors(InitialFilingNumber, Name, NonNoisyName, StreetAddress, City, State, ZipCode, ZipCodeExtension, CountryCode) VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s)", (t[1:14].strip(),t[27:327].strip(), DeNoiseName((t[27:327]).strip()), t[327:437].strip(),t[437:501].strip(),t[501:533].strip(),t[533:548].strip(),t[548:554].strip(),t[554:557].strip()))
-                con.commit()
+                commit_count=commit_count+1
     
 #            if RecordCode == "3": #Personal Debtor - will skip
-#                print("Personal Debtor skipped " + str(skippedlines))
+#                logging.debug("Personal Debtor skipped " + str(skippedlines))
             
             if RecordCode == "4": #Business Secured Party
                 cur.execute("INSERT INTO SecuredParties(InitialFilingNumber, Name, StreetAddress, City, State, ZipCode, ZipCodeExtension, CountryCode) VALUES(%s, %s, %s, %s, %s, %s, %s, %s);", (t[1:14].strip(),t[27:327].strip(), t[327:437].strip(),t[437:501].strip(),t[501:533].strip(),t[533:548].strip(),t[548:554].strip(),t[554:557].strip()))
-                con.commit()
+                commit_count=commit_count+1
 
             if RecordCode == "5":
                 cur.execute("INSERT INTO SecuredParties(InitialFilingNumber, Name, StreetAddress, City, State, ZipCode, ZipCodeExtension, CountryCode) VALUES(%s, %s, %s, %s, %s, %s, %s, %s);", (t[1:14].strip(),t[77:127].strip() + " " + t[127:177].strip() + " " + t[27:77].strip() + " " + t[177:183].strip(), t[183:293].strip(),t[293:357].strip(),t[357:389].strip(),t[389:404].strip(),t[404:410].strip(),t[410:413].strip()))
-                con.commit()
+                commit_count=commit_count+1
 
             #if RecordCode == "6": #Chang Filing (UCC3)
                 #print "Initial Filing Number: "+t[2:15]
@@ -81,7 +84,16 @@ def Import_UCC_Data():
             #if RecordCode == "7": #Collateral
                 #skippedlines=skippedlines+1
                 #print "collateral goes here - account for multiple lines of collateral, appending one after the next " + str(skippedlines)
-        print("DONE with " + filename)
+            if commit_count == commit_count_target:
+                    con.commit()
+                    commit_count_target=commit_count_target+cfg.commit_count_factor
+            if linecount > (portion * pct):
+                logging.info(str(int((linecount/22805193)*100)) + "%")
+                if pct == 1:
+                    pct = 2
+                else:
+                    pct = pct + 1
+        logging.info("DONE with " + filename)
     f.close()
 
 
@@ -123,13 +135,11 @@ def Import_Corp_Data():
             if filename.endswith('CORPMASTER.TXT'):
                 # De-Noisify Debtor's Name (remove punctuation marks, business abbreviations, etc.)
                 cur.execute("INSERT INTO SOSCompanyList(CompNum, FormationDate, Status, Type, Name, NonNoisyName) VALUES(%s, %s, %s, %s, %s, %s);", (t[5:13].strip(), t[13:21].strip(), t[21].strip(), t[22:26].strip(), t[70:420].strip(), DeNoiseName(t[70:420])))
-                con.commit()
                 linecount=linecount+1
 
             if filename.endswith('LPMASTER.TXT'):
                 # De-Noisify Debtor's Name (remove punctuation marks, business abbreviations, etc.)
                 cur.execute("INSERT INTO SOSCompanyList(CompNum, FormationDate, Status, Type, Name, NonNoisyName) VALUES(%s, %s, %s, %s, %s, %s);", (t[0:12].strip(), t[12:20].strip(), t[20].strip(), t[21].strip(), t[22:242].strip(), DeNoiseName(t[22:242])))
-                con.commit()
                 linecount=linecount+1
             if linecount > (portion * pct):
                     logging.debug(str(int((linecount/3732920)*100)) + "%")
