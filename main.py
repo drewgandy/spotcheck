@@ -7,7 +7,8 @@ import CA_Import
 #import symspell_db
 
 print("START: " + time.ctime())
-CA_Import.Import_UCC_Data()
+#CA_Import.Import_UCC_Data()
+CA_Import.Import_UCC_Data_infile()
 #CA_Import.Import_Corp_Data()
 
 

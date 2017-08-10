@@ -14,6 +14,7 @@ total_linecount =0
 logging.basicConfig(level=logging.DEBUG)
 logging.debug("RUNNING")
 path = cfg.UCC_path
+logging.info(glob.glob(path + '*.txt'))
 for filename in glob.iglob(path + '*.txt'):
     logging.info('OPENING: '+filename)
     #logging.debug(filename)

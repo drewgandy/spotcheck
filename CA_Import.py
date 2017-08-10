@@ -3,6 +3,88 @@ from unidecode import unidecode
 import MySQLdb as mdb
 import logging
 
+def Import_UCC_Data_infile():
+    import glob
+    import config as cfg
+    
+    logging.basicConfig(filename='UCC_import.log',format='%(asctime)s %(message)s', level=logging.DEBUG)
+
+    con = mdb.connect(host=cfg.mysql['host'], port=cfg.mysql['port'], user=cfg.mysql['user'], passwd=cfg.mysql['passwd'], db=cfg.mysql['db'])
+
+    cur = con.cursor()
+    cur.execute("DROP TABLE IF EXISTS InitialFilingRecord")
+    cur.execute("CREATE TABLE InitialFilingRecord(Id INT PRIMARY KEY AUTO_INCREMENT, InitialFilingNumber VARCHAR(14), InitialFilingType VARCHAR(5), FilingDate VARCHAR(8), FilingTime VARCHAR(4), FilingStatus VARCHAR(1), LapseDate VARCHAR(8), PageCount VARCHAR(4))")
+    cur.execute("DROP TABLE IF EXISTS BusinessDebtors")
+    cur.execute("CREATE TABLE BusinessDebtors(Id INT PRIMARY KEY AUTO_INCREMENT, InitialFilingNumber VARCHAR(14), Name VARCHAR(300), NonNoisyName VARCHAR(300), StreetAddress VARCHAR(110), City VARCHAR(64), State VARCHAR(32), ZipCode VARCHAR(15), ZipCodeExtension VARCHAR(6), CountryCode VARCHAR(3))")
+    #cur.execute("DROP TABLE IF EXISTS SecuredParties")
+    #cur.execute("CREATE TABLE SecuredParties(Id INT PRIMARY KEY AUTO_INCREMENT, InitialFilingNumber VARCHAR(14), Name VARCHAR(300), StreetAddress VARCHAR(110), City VARCHAR(64), State VARCHAR(32), ZipCode VARCHAR(15), ZipCodeExtension VARCHAR(6), CountryCode VARCHAR(3))")
+ 
+    path = cfg.UCC_path
+    commit_count=0
+    commit_count_target=cfg.commit_count_factor
+    pct = 1
+    total_linecount = 22805193
+    f_initial_filing_record = open(path+"ifr.dat","w")
+    f_business_debtor = open(path+"bd.dat","w")
+    linecount = 0
+    for filename in glob.iglob(path + '*.txt'):
+
+        logging.info("OPENING: "+filename)
+
+        f = open(filename, 'r', encoding='latin-1')
+        for t in f:
+            linecount = linecount + 1
+
+            # this can limit the number of records looped through
+            #if linecount == 10:
+                #con.commit()
+                #con.close()
+            #    logging.debug("BREAK EARLY##")
+                #break
+            
+            RecordCode = t[0:1]
+            
+            if RecordCode == "1": #Initial Filing Record
+                f_initial_filing_record.write(''.join([t[1:15], t[27:57], "\n"]))
+
+            if RecordCode == "2": #Business Debtor
+                 f_business_debtor.write(''.join([t[1:15], t[27:327],  DeNoiseName(t[27:327]).ljust(300), t[327:557], "\n"]))
+
+                # De-Noisify Debtor's Name (remove punctuation marks, business abbreviations, etc.)
+                #BusinessDebtorCount=BusinessDebtorCount+1
+                #print "Business Debtor " + str(BusinessDebtorCount)
+                #cur.execute("INSERT INTO BusinessDebtors(InitialFilingNumber, Name, NonNoisyName, StreetAddress, City, State, ZipCode, ZipCodeExtension, CountryCode) VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s)", (t[1:14].strip(),t[27:327].strip(), DeNoiseName((t[27:327]).strip()), t[327:437].strip(),t[437:501].strip(),t[501:533].strip(),t[533:548].strip(),t[548:554].strip(),t[554:557].strip()))
+                #commit_count=commit_count+1
+    
+#            if RecordCode == "3": #Personal Debtor - will skip
+#                logging.debug("Personal Debtor skipped " + str(skippedlines))
+            
+            #if RecordCode == "4": #Business Secured Party
+                #cur.execute("INSERT INTO SecuredParties(InitialFilingNumber, Name, StreetAddress, City, State, ZipCode, ZipCodeExtension, CountryCode) VALUES(%s, %s, %s, %s, %s, %s, %s, %s);", (t[1:14].strip(),t[27:327].strip(), t[327:437].strip(),t[437:501].strip(),t[501:533].strip(),t[533:548].strip(),t[548:554].strip(),t[554:557].strip()))
+                #commit_count=commit_count+1
+
+            #if RecordCode == "5":
+                #cur.execute("INSERT INTO SecuredParties(InitialFilingNumber, Name, StreetAddress, City, State, ZipCode, ZipCodeExtension, CountryCode) VALUES(%s, %s, %s, %s, %s, %s, %s, %s);", (t[1:14].strip(),t[77:127].strip() + " " + t[127:177].strip() + " " + t[27:77].strip() + " " + t[177:183].strip(), t[183:293].strip(),t[293:357].strip(),t[357:389].strip(),t[389:404].strip(),t[404:410].strip(),t[410:413].strip()))
+                #commit_count=commit_count+1
+
+            #if RecordCode == "6": #Chang Filing (UCC3)
+                #print "Initial Filing Number: "+t[2:15]
+                #print "UCC3 Filing Number: "+t[15:27]
+                #print "Change Filing Type: "+ChangeFilingType.get(t[27:32].strip(), "EMPTY")
+            
+            #if RecordCode == "7": #Collateral
+                #skippedlines=skippedlines+1
+                #print "collateral goes here - account for multiple lines of collateral, appending one after the next " + str(skippedlines)
+            if commit_count == commit_count_target:
+                    #con.commit()
+                    commit_count_target=commit_count_target+cfg.commit_count_factor
+            if ((linecount / total_linecount)*100) > pct:
+                pct = pct + 1
+                logging.info(str(int((linecount / total_linecount)*100)) + "%")
+                #print(str(int((linecount / total_linecount)*100)) + "%")
+        logging.info("DONE with " + filename)
+    f.close()
+    
 def Import_UCC_Data():
  #   import _mysql
  #   import CA_Denoise_Name
@@ -12,10 +94,9 @@ def Import_UCC_Data():
     logging.basicConfig(filename='UCC_import.log',format='%(asctime)s %(message)s', level=logging.DEBUG)
 
     con = mdb.connect(host=cfg.mysql['host'], port=cfg.mysql['port'], user=cfg.mysql['user'], passwd=cfg.mysql['passwd'], db=cfg.mysql['db'])
-    counter = 0
+    linecount = 0
 
     cur = con.cursor()
-    con.autocommit(True)
     cur.execute("DROP TABLE IF EXISTS InitialFilingRecord")
     cur.execute("CREATE TABLE InitialFilingRecord(Id INT PRIMARY KEY AUTO_INCREMENT, InitialFilingNumber VARCHAR(14), InitialFilingType VARCHAR(5), FilingDate VARCHAR(8), FilingTime VARCHAR(4), FilingStatus VARCHAR(1), LapseDate VARCHAR(8), PageCount VARCHAR(4))")
     cur.execute("DROP TABLE IF EXISTS BusinessDebtors")
@@ -36,14 +117,14 @@ def Import_UCC_Data():
         initialFilings = 0
         BusinessDebtorCount = 0
         linecount = 0
-        counter = 0
+        linecount = 0
         for line in f:
             #logging.debug(line)
             t = line #.readline()
 
             # this can limit the number of records looped through
-            #counter = counter + 1
-            #if counter == 2:
+            #linecount = linecount + 1
+            #if linecount == 2:
                 #con.commit()
                 #con.close()
             #    logging.debug("BREAK EARLY##")
@@ -108,13 +189,13 @@ def Import_Corp_Data():
 
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
-    con = mdb.connect(host=cfg.mysql['host'], port=cfg.mysql['port'], user=cfg.mysql['user'], passwd=cfg.mysql['passwd'], db=cfg.mysql['db'], autocommit=True)
+    con = mdb.connect(host=cfg.mysql['host'], port=cfg.mysql['port'], user=cfg.mysql['user'], passwd=cfg.mysql['passwd'], db=cfg.mysql['db'])
 
     cur = con.cursor()
     cur.execute("DROP TABLE IF EXISTS SOSCompanyList")
     cur.execute("CREATE TABLE SOSCompanyList(Id INT PRIMARY KEY AUTO_INCREMENT, CompNum VARCHAR(12), FormationDate VARCHAR(8), Status VARCHAR(1), Type VARCHAR(4), Name VARCHAR(350), NonNoisyName VARCHAR(350))")
 
-    counter = 0
+    linecount = 0
     
     path = cfg.Corp_path
     pct = 1
@@ -123,13 +204,13 @@ def Import_Corp_Data():
         logging.debug(filename)
         f = open(filename, 'r', encoding='latin-1')
         logging.debug("OPEN: " + str(time.clock()))
-        counter = 0
+        linecount = 0
         linecount = 0
         for line in f:
             t = line #.readline()
             # this can limit the number of records looped through
-            #counter = counter + 1
-            #if counter == 5:
+            #linecount = linecount + 1
+            #if linecount == 5:
             #    break
 
             if filename.endswith('CORPMASTER.TXT'):
