@@ -1,8 +1,4 @@
-
 import time
-import config as cfg
-startclock = time.clock()
-
 #import CA_Denoise_Name
 import CA_Import
 #import Compare_Data

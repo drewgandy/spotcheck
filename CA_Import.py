@@ -52,14 +52,14 @@ def Import_UCC_Data():
                     cur.execute("INSERT INTO InitialFilingRecord(InitialFilingNumber, InitialFilingType, FilingDate, FilingTime, FilingStatus, LapseDate, PageCount) VALUES(%s, %s, %s, %s, %s, %s, %s)", (t[1:14].strip(),t[27:32].strip(),t[32:40].strip(),t[40:44].strip(),t[44:45].strip(),t[45:53].strip(),t[53:57].strip()))
                     con.commit()
                 except (mdb.Error, mdb.Warning) as e:
-                    print(e) 
+                    print(e)
                     return None
 
             if RecordCode == "2": #Business Debtor
                 # De-Noisify Debtor's Name (remove punctuation marks, business abbreviations, etc.)
                 #BusinessDebtorCount=BusinessDebtorCount+1
                 #print "Business Debtor " + str(BusinessDebtorCount)
-                cur.execute("INSERT INTO BusinessDebtors(InitialFilingNumber, Name, NonNoisyName, StreetAddress, City, State, ZipCode, ZipCodeExtension, CountryCode) VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s)", (t[1:14].strip(),t[27:327].strip(), DeNoiseName((t[27:327]).strip()), t[327:437].strip(),t[437:501].strip(),t[501:533].strip(),t[533:548].strip(),t[548:554].strip(),t[554:557].strip()))              
+                cur.execute("INSERT INTO BusinessDebtors(InitialFilingNumber, Name, NonNoisyName, StreetAddress, City, State, ZipCode, ZipCodeExtension, CountryCode) VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s)", (t[1:14].strip(),t[27:327].strip(), DeNoiseName((t[27:327]).strip()), t[327:437].strip(),t[437:501].strip(),t[501:533].strip(),t[533:548].strip(),t[548:554].strip(),t[554:557].strip()))
                 con.commit()
     
 #            if RecordCode == "3": #Personal Debtor - will skip
